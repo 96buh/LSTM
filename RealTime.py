@@ -42,7 +42,6 @@ def load_model(model_path, input_dim, hidden_dim, num_layers, num_classes, devic
     model.eval()  # 設置為評估模式
     return model
 
-# 實時數據處理
 class RealTimePredictor:
     def __init__(self, model, max_seq_len, input_dim, device):
         self.model = model
