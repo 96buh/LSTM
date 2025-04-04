@@ -151,6 +151,19 @@ def kfold_training(sequences, labels):
         train_sequences, train_labels = sequences[train_indices], labels[train_indices]
         test_sequences, test_labels = sequences[test_indices], labels[test_indices]
 
+        # --- 新增資料正規化處理 ---
+        scaler = StandardScaler()
+        # 將訓練資料從 3D 轉為 2D: (samples * seq_len, features)
+        train_reshaped = train_sequences.reshape(-1, train_sequences.shape[-1])
+        scaler.fit(train_reshaped)
+        # 將訓練資料轉換回原本的形狀
+        train_sequences = scaler.transform(train_reshaped).reshape(train_sequences.shape)
+
+        # 測試資料僅使用 transform，避免資料洩漏
+        test_reshaped = test_sequences.reshape(-1, test_sequences.shape[-1])
+        test_sequences = scaler.transform(test_reshaped).reshape(test_sequences.shape)
+        # --- 正規化處理結束 ---
+
         train_dataset = ChargingDataset(train_sequences, train_labels)
         test_dataset = ChargingDataset(test_sequences, test_labels)
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -403,14 +416,30 @@ def count_chunks_in_folder(folder_path, max_seq_len=MAX_SEQ_LEN):
             total_chunks += chunks
     return total_chunks
 
+def best_result():
+    results_csv_path = os.path.join(RESULT_DIR, "overall_experiment_log.csv")
+    if not os.path.exists(results_csv_path):
+        print("未發現網格搜尋結果 CSV，請先執行網格搜尋。")
+        return None
+    df = pd.read_csv(results_csv_path)
+    # 假設以驗證準確率最高為最佳模型
+    best_row = df.loc[df['post_train_acc'].idxmax()]
+    return best_row
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LSTM Model Training and Data Count Check")
     parser.add_argument("--check-data", action="store_true", help="如果設置此選項，則只執行資料數量統計")
+    parser.add_argument("--best", action="store_true", help="若設置此選項，則只印出最佳模型指標")
     args = parser.parse_args()
 
+
+    if args.best:
+        best_model = best_result()
+        if best_model is not None:
+            print("最好的模型指標:")
+            print(best_model)
     # 若只檢查資料，則僅印出各類別的片段數量
-    if args.check_data:
+    elif args.check_data:
         print(f"Max seq len = {MAX_SEQ_LEN}")
         for label, folder in LABEL_DIRS.items():
             count = count_chunks_in_folder(folder, max_seq_len=MAX_SEQ_LEN)
@@ -420,6 +449,9 @@ if __name__ == "__main__":
         batch_size_values = [8, 16, 32]
         learning_rate_values = [1e-2, 1e-3, 1e-1, 1e-4]
         max_seq_len_values = [10, 20, 30, 40]
+        # batch_size_values = [8]
+        # learning_rate_values = [1e-3]
+        # max_seq_len_values = [10]
 
         # 儲存所有實驗結果記錄
         overall_experiment_logs = []

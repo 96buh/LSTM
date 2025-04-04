@@ -16,7 +16,7 @@ LABEL_DIRS = {
     2: "./dataset/abnormal/wire_rust",
     3: "./dataset/abnormal/wire_peeling"
 }
-RESULT_DIR = "./models/linear/result"
+RESULT_DIR = "./models/MLP/result"
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 # ---------------------------
