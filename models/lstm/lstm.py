@@ -7,14 +7,14 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, precision_score, recall_score, f1_score
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.preprocessing import StandardScaler
 import argparse
 import time
 
 from settings import *
 
 os.makedirs(RESULT_DIR, exist_ok=True)
-
 
 # === 資料處理 ===
 def process_file(file_path, label, sequences, labels, max_seq_len=MAX_SEQ_LEN):
@@ -49,7 +49,7 @@ def load_data():
         for filename in os.listdir(folder):
             if filename.lower().endswith(".csv"):
                 file_path = os.path.join(folder, filename)
-                process_file(file_path, label=label, sequences=sequences, labels=labels)
+                process_file(file_path, label=label, sequences=sequences, labels=labels, max_seq_len=MAX_SEQ_LEN)
     sequences = np.array(sequences, dtype=np.float32)
     labels = np.array(labels, dtype=np.int64)
 
@@ -59,6 +59,17 @@ def load_data():
         print(f"Number of class {i} samples:", np.sum(labels == i))
     print("Unique labels:", np.unique(labels))
     return sequences, labels
+
+def split_data(sequences, labels, test_size=0.2, val_size=0.1):
+    """
+    先切出測試集，再從剩餘資料中切出驗證集。
+    """
+    X_train_val, X_test, y_train_val, y_test = train_test_split(
+        sequences, labels, test_size=test_size, stratify=labels, random_state=SEED)
+    val_relative = val_size / (1 - test_size)
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train_val, y_train_val, test_size=val_relative, stratify=y_train_val, random_state=SEED)
+    return X_train, X_val, X_test, y_train, y_val, y_test
 
 
 # === 自訂 Dataset ===
@@ -344,25 +355,11 @@ def plot_metric_curves(all_folds_metrics):
         plt.close(fig)
 
 
-def count_chunks_in_folder(folder_path, max_seq_len=MAX_SEQ_LEN):
-    """
-    計算指定資料夾內所有 CSV 檔案，依據 max_seq_len 切分後的總片段數量。
-    """
-    total_chunks = 0
-    for filename in os.listdir(folder_path):
-        if filename.lower().endswith(".csv"):
-            file_path = os.path.join(folder_path, filename)
-            df = pd.read_csv(file_path)
-            num_rows = len(df)
-            chunks = num_rows // max_seq_len
-            total_chunks += chunks
-    return total_chunks
-
 def plot_overlaid_metrics(all_folds_metrics):
     # 假設所有 fold 的 epoch 數量相同
     epochs = all_folds_metrics[0]['Epoch']
     
-    # 定義你想疊加繪製的指標，key 為圖形標題、value 為 DataFrame 中的欄位名稱
+    # 定義你想疊加繪製的指標
     metrics = {
         'Train Accuracy': 'Train Accuracy',
         'Test Accuracy': 'Test Accuracy',
@@ -384,7 +381,6 @@ def plot_overlaid_metrics(all_folds_metrics):
         plt.legend()
         plt.tight_layout()
         
-        # 儲存圖形
         pdf_path = os.path.join(RESULT_DIR, f"combined_{col}.pdf")
         svg_path = os.path.join(RESULT_DIR, f"combined_{col}.svg")
         plt.savefig(pdf_path, bbox_inches='tight')
@@ -393,19 +389,107 @@ def plot_overlaid_metrics(all_folds_metrics):
         plt.close()
 
 
+def count_chunks_in_folder(folder_path, max_seq_len=MAX_SEQ_LEN):
+    """
+    計算指定資料夾內所有 CSV 檔案，依據 max_seq_len 切分後的總片段數量。
+    """
+    total_chunks = 0
+    for filename in os.listdir(folder_path):
+        if filename.lower().endswith(".csv"):
+            file_path = os.path.join(folder_path, filename)
+            df = pd.read_csv(file_path)
+            num_rows = len(df)
+            chunks = num_rows // max_seq_len
+            total_chunks += chunks
+    return total_chunks
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LSTM Model Training and Data Count Check")
     parser.add_argument("--check-data", action="store_true", help="如果設置此選項，則只執行資料數量統計")
     args = parser.parse_args()
+
+    # 若只檢查資料，則僅印出各類別的片段數量
     if args.check_data:
         print(f"Max seq len = {MAX_SEQ_LEN}")
-        # 檢查各類別資料的片段數量
         for label, folder in LABEL_DIRS.items():
-            count = count_chunks_in_folder(folder)
+            count = count_chunks_in_folder(folder, max_seq_len=MAX_SEQ_LEN)
             print(f"Label {label} ({folder}): {count} chunks")
     else:
-        all_sequences, all_labels = load_data()
-        final_metrics_df, all_folds_metrics = kfold_training(all_sequences, all_labels)
-        # 繪製每個 fold 的指標曲線圖
-        plot_metric_curves(all_folds_metrics)
-        plot_overlaid_metrics(all_folds_metrics)
+        # 定義超參數網格（可依需求調整取值）
+        batch_size_values = [8, 16, 32]
+        learning_rate_values = [1e-2, 1e-3, 1e-1, 1e-4]
+        max_seq_len_values = [10, 20, 30, 40]
+
+        # 儲存所有實驗結果記錄
+        overall_experiment_logs = []
+        # 記錄所有實驗的總結果（此 log 最後存成 CSV 檔）
+        overall_results = []
+
+        # 保存原始的 RESULT_DIR 值，方便還原
+        original_RESULT_DIR = RESULT_DIR
+
+        # 依照超參數組合進行迴圈
+        for bs in batch_size_values:
+            for lr in learning_rate_values:
+                for seq in max_seq_len_values:
+                    # 更新全域變數（注意：這裡是更新本模組內的變數）
+                    BATCH_SIZE = bs
+                    LEARNING_RATE = lr
+                    MAX_SEQ_LEN = seq
+
+                    # 為每組參數建立獨立儲存結果的資料夾
+                    exp_id = f"bs_{bs}_lr_{lr}_seq_{seq}"
+                    print(f"\n==== Running experiment: {exp_id} ====")
+                    exp_result_dir = os.path.join(original_RESULT_DIR, exp_id)
+                    os.makedirs(exp_result_dir, exist_ok=True)
+                    
+                    # 暫時改寫 RESULT_DIR，讓後續的儲存檔案寫入此目錄
+                    RESULT_DIR = exp_result_dir
+
+                    # 載入資料（會根據 MAX_SEQ_LEN 切分資料）
+                    all_sequences, all_labels = load_data()
+
+                    # 執行 K-fold 訓練
+                    final_metrics_df, all_folds_metrics = kfold_training(all_sequences, all_labels)
+
+                    # 繪製指標曲線圖
+                    plot_metric_curves(all_folds_metrics)
+                    plot_overlaid_metrics(all_folds_metrics)
+
+                    # 儲存本次實驗的最終指標 log
+                    log_csv_path = os.path.join(RESULT_DIR, "final_metrics.csv")
+                    final_metrics_df.to_csv(log_csv_path, index=False)
+                    print(f"Final metrics logged at: {log_csv_path}")
+
+                    # 將本次實驗資訊存入 overall_experiment_logs
+                    overall_experiment_logs.append({
+                        'experiment_id': exp_id,
+                        'batch_size': bs,
+                        'learning_rate': lr,
+                        'max_seq_len': seq,
+                        'final_metrics': final_metrics_df
+                    })
+                    # 也可將各折最終的平均值記錄下來（例如：Post-train Accuracy）
+                    overall_results.append({
+                        'experiment_id': exp_id,
+                        'batch_size': bs,
+                        'learning_rate': lr,
+                        'max_seq_len': seq,
+                        'pre_train_loss': final_metrics_df['Pre-train Loss'].mean(),
+                        'pre_train_acc': final_metrics_df['Pre-train Accuracy'].mean(),
+                        'post_train_loss': final_metrics_df['Post-train Loss'].mean(),
+                        'post_train_acc': final_metrics_df['Post-train Accuracy'].mean(),
+                        'precision': final_metrics_df['Precision'].mean(),
+                        'recall': final_metrics_df['Recall'].mean(),
+                        'f1_score': final_metrics_df['F1-Score'].mean()
+                    })
+
+                    # 還原 RESULT_DIR
+                    RESULT_DIR = original_RESULT_DIR
+
+        # 儲存所有實驗的總結果 log
+        overall_log_path = os.path.join(RESULT_DIR, "overall_experiment_log.csv")
+        overall_df = pd.DataFrame(overall_results)
+        overall_df.to_csv(overall_log_path, index=False)
+        print(f"Overall experiment log saved at: {overall_log_path}")
