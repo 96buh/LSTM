@@ -445,7 +445,7 @@ if __name__ == "__main__":
             count = count_chunks_in_folder(folder, max_seq_len=MAX_SEQ_LEN)
             print(f"Label {label} ({folder}): {count} chunks")
     else:
-        # 定義超參數網格（可依需求調整取值）
+        # 超參數
         batch_size_values = [8, 16, 32]
         learning_rate_values = [1e-2, 1e-3, 1e-1, 1e-4]
         max_seq_len_values = [10, 20, 30, 40]
@@ -517,7 +517,6 @@ if __name__ == "__main__":
                         'f1_score': final_metrics_df['F1-Score'].mean()
                     })
 
-                    # 還原 RESULT_DIR
                     RESULT_DIR = original_RESULT_DIR
 
         # 儲存所有實驗的總結果 log

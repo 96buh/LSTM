@@ -24,7 +24,7 @@ matplotlib.rcParams.update({
 # 設置圖表尺寸（基於 LaTeX 列寬）
 width_pt = 345  # 替換為您的列寬，例如 \textwidth 的值
 inches_per_pt = 1.0 / 72.27  # 點數轉英寸
-golden_ratio = (5**0.5 - 1) / 2  # 黃金比例
+golden_ratio = (5**0.5 - 1) / 2
 width_in = width_pt * inches_per_pt
 height_in = width_in * golden_ratio
 
