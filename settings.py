@@ -1,6 +1,10 @@
 NORMAL_DIR = "dataset/normal"
 ABNORMAL_DIR = "dataset/abnormal"
-RESULT_DIR = "result"
+TRANSFORMER_RUST_DIR = "dataset/abnormal/transformer_rust"
+WIRE_RUST_DIR = "dataset/abnormal/wire_rust"
+WIRE_PEELING_DIR= "dataset/abnormal/wire_peeling"
+
+RESULT_DIR = "./models/lstm/result"
 
 MAX_SEQ_LEN = 10
 
